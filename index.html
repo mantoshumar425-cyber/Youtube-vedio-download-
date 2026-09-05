@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>MyTube Downloader — Download Your Videos</title>
+  <meta name="description" content="Download and manage your own YouTube videos.">
+  <meta name="theme-color" content="#111111">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #f5f5f5;
+      --card: #ffffff;
+      --text: #111111;
+      --muted: #666666;
+      --border: #dddddd;
+      --primary: #ff0000;
+      --primary-dark: #cc0000;
+      --input: #fafafa;
+      --shadow: 0 12px 35px rgba(0,0,0,.08);
+    }
+
+    body.dark {
+      --bg: #0b0b0b;
+      --card: #151515;
+      --text: #ffffff;
+      --muted: #aaaaaa;
+      --border: #292929;
+      --input: #101010;
+      --shadow: 0 12px 35px rgba(0,0,0,.35);
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background .25s, color .25s;
+    }
+
+    header {
+      width: 100%;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+
+    .nav {
+      max-width: 1150px;
+      margin: auto;
+      min-height: 70px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .brand {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .brand span {
+      color: var(--primary);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .theme-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: var(--input);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 18px;
+    }
+
+    main {
+      max-width: 1150px;
+      margin: auto;
+      padding: 70px 20px 50px;
+    }
+
+    .hero {
+      text-align: center;
+      max-width: 800px;
+      margin: auto;
+    }
+
+    .hero h1 {
+      font-size: clamp(34px, 6vw, 62px);
+      line-height: 1.05;
+      margin-bottom: 18px;
+      letter-spacing: -2px;
+    }
+
+    .hero h1 span {
+      color: var(--primary);
+    }
+
+    .hero p {
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.6;
+      margin-bottom: 35px;
+    }
+
+    .downloader {
+      max-width: 850px;
+      margin: auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .url-input {
+      flex: 1;
+      min-width: 0;
+      height: 56px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--input);
+      color: var(--text);
+      padding: 0 17px;
+      font-size: 16px;
+      outline: none;
+    }
+
+    .url-input:focus {
+      border-color: var(--primary);
+    }
+
+    .analyze-btn {
+      height: 56px;
+      padding: 0 25px;
+      border-radius: 12px;
+      background: var(--primary);
+      color: white;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .analyze-btn:hover {
+      background: var(--primary-dark);
+    }
+
+    .message {
+      display: none;
+      margin-top: 15px;
+      padding: 13px 15px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .message.show {
+      display: block;
+    }
+
+    .message.error {
+      background: rgba(255,0,0,.09);
+      color: #d00000;
+    }
+
+    .message.success {
+      background: rgba(0,150,70,.10);
+      color: #008040;
+    }
+
+    .result {
+      display: none;
+      margin-top: 22px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      overflow: hidden;
+    }
+
+    .result.show {
+      display: block;
+    }
+
+    .result-inner {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+    }
+
+    .thumbnail {
+      width: 100%;
+      height: 170px;
+      object-fit: cover;
+      background: #222;
+    }
+
+    .result-info {
+      padding: 20px;
+    }
+
+    .result-info h2 {
+      font-size: 20px;
+      margin-bottom: 9px;
+    }
+
+    .result-info p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .format-area {
+      padding: 18px 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .format-area label {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .format-select {
+      width: 100%;
+      height: 48px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--input);
+      color: var(--text);
+      padding: 0 12px;
+      font-size: 15px;
+    }
+
+    .download-btn {
+      width: 100%;
+      height: 50px;
+      margin-top: 12px;
+      border-radius: 10px;
+      background: var(--primary);
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .download-btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .info-grid {
+      margin-top: 70px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .info-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 25px;
+    }
+
+    .info-card .number {
+      font-size: 14px;
+      color: var(--primary);
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .info-card h3 {
+      font-size: 19px;
+      margin-bottom: 9px;
+    }
+
+    .info-card p {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .notice {
+      margin-top: 35px;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+      background: var(--card);
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      background: var(--card);
+      margin-top: 40px;
+    }
+
+    .footer-inner {
+      max-width: 1150px;
+      margin: auto;
+      padding: 25px 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 700px) {
+      main {
+        padding-top: 45px;
+      }
+
+      .input-row {
+        flex-direction: column;
+      }
+
+      .analyze-btn {
+        width: 100%;
+      }
+
+      .result-inner {
+        grid-template-columns: 1fr;
+      }
+
+      .thumbnail {
+        height: 210px;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+        margin-top: 45px;
+      }
+
+      .footer-inner {
+        flex-direction: column;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="nav">
+      <div class="brand">My<span>Tube</span> Downloader</div>
+
+      <div class="nav-actions">
+        <button class="theme-btn" id="themeBtn" type="button" aria-label="Toggle theme">
+          Dark
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <section class="hero">
+      <h1>Download <span>Your</span> YouTube Videos</h1>
+
+      <p>
+        Paste the URL of a YouTube video that you own or have permission
+        to download, then continue through your authorized download service.
+      </p>
+
+      <div class="downloader">
+
+        <div class="input-row">
+          <input
+            id="urlInput"
+            class="url-input"
+            type="url"
+            placeholder="Paste your YouTube video URL here..."
+            autocomplete="off"
+            spellcheck="false"
+          >
+
+          <button id="analyzeBtn" class="analyze-btn" type="button">
+            Analyze
+          </button>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div id="result" class="result">
+
+          <div class="result-inner">
+
+            <img
+              id="thumbnail"
+              class="thumbnail"
+              src=""
+              alt="Video thumbnail"
+            >
+
+            <div class="result-info">
+              <h2 id="videoTitle">YouTube Video</h2>
+              <p id="videoId"></p>
+            </div>
+
+          </div>
+
+          <div class="format-area">
+
+            <label for="formatSelect">
+              Select format
+            </label>
+
+            <select id="formatSelect" class="format-select">
+              <option value="mp4-720">MP4 — 720p</option>
+              <option value="mp4-1080">MP4 — 1080p</option>
+              <option value="mp4-480">MP4 — 480p</option>
+              <option value="audio">Audio — authorized source only</option>
+            </select>
+
+            <button
+              id="downloadBtn"
+              class="download-btn"
+              type="button"
+            >
+              Continue to Authorized Download
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <section class="info-grid">
+
+      <div class="info-card">
+        <div class="number">01</div>
+        <h3>Paste URL</h3>
+        <p>
+          Enter the YouTube URL of your own video or a video you have
+          permission to download.
+        </p>
+      </div>
+
+      <div class="info-card">
+        <div class="number">02</div>
+        <h3>Verify Video</h3>
+        <p>
+          The page extracts the video ID and prepares the authorized
+          download workflow.
+        </p>
+      </div>
+
+      <div class="info-card">
+        <div class="number">03</div>
+        <h3>Choose Format</h3>
+        <p>
+          Select an available format from your authorized backend or
+          storage service.
+        </p>
+      </div>
+
+    </section>
+
+    <div class="notice">
+      <strong>Important:</strong>
+      This frontend does not bypass YouTube restrictions or retrieve
+      protected media streams. Connect the download button to your own
+      authorized backend/storage system for videos you own or have
+      permission to download.
+    </div>
+
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <div>© 2026 MyTube Downloader</div>
+      <div>For authorized video downloads only</div>
+    </div>
+  </footer>
+
+  <script>
+    const urlInput = document.getElementById("urlInput");
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const result = document.getElementById("result");
+    const message = document.getElementById("message");
+    const thumbnail = document.getElementById("thumbnail");
+    const videoTitle = document.getElementById("videoTitle");
+    const videoIdText = document.getElementById("videoId");
+    const formatSelect = document.getElementById("formatSelect");
+    const themeBtn = document.getElementById("themeBtn");
+
+    let currentVideoId = null;
+
+    function showMessage(text, type) {
+      message.textContent = text;
+      message.className = "message show " + type;
+    }
+
+    function hideMessage() {
+      message.textContent = "";
+      message.className = "message";
+    }
+
+    function getYouTubeId(value) {
+      try {
+        const url = new URL(value.trim());
+
+        if (
+          url.hostname === "youtu.be" ||
+          url.hostname === "www.youtu.be"
+        ) {
+          return url.pathname.substring(1).split("/")[0] || null;
+        }
+
+        if (
+          url.hostname === "youtube.com" ||
+          url.hostname === "www.youtube.com" ||
+          url.hostname === "m.youtube.com"
+        ) {
+          if (url.pathname === "/watch") {
+            return url.searchParams.get("v");
+          }
+
+          if (url.pathname.startsWith("/shorts/")) {
+            return url.pathname.split("/")[2] || null;
+          }
+
+          if (url.pathname.startsWith("/embed/")) {
+            return url.pathname.split("/")[2] || null;
+          }
+        }
+
+        return null;
+
+      } catch {
+        return null;
+      }
+    }
+
+    function isValidVideoId(id) {
+      return /^[A-Za-z0-9_-]{11}$/.test(id);
+    }
+
+    analyzeBtn.addEventListener("click", () => {
+
+      hideMessage();
+
+      const value = urlInput.value.trim();
+
+      if (!value) {
+        result.classList.remove("show");
+        showMessage("Please paste a YouTube video URL.", "error");
+        return;
+      }
+
+      const id = getYouTubeId(value);
+
+      if (!id || !isValidVideoId(id)) {
+        result.classList.remove("show");
+        showMessage(
+          "Please enter a valid YouTube video URL.",
+          "error"
+        );
+        return;
+      }
+
+      currentVideoId = id;
+
+      thumbnail.src =
+        "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+
+      videoTitle.textContent = "YouTube Video";
+      videoIdText.textContent =
+        "Video ID: " + id;
+
+      result.classList.add("show");
+
+      showMessage(
+        "Video URL recognized. Connect your authorized backend to continue.",
+        "success"
+      );
+    });
+
+    downloadBtn.addEventListener("click", async () => {
+
+      if (!currentVideoId) {
+        showMessage(
+          "Analyze a valid YouTube URL first.",
+          "error"
+        );
+        return;
+      }
+
+      const format = formatSelect.value;
+
+      /*
+        IMPORTANT:
+        Replace this endpoint with your own authorized backend.
+
+        Example:
+
+        POST /api/download
+
+        {
+          "videoId": currentVideoId,
+          "format": format
+        }
+
+        The backend should only process videos that the user owns
+        or is authorized to download.
+      */
+
+      showMessage(
+        "Your authorized download backend is not connected yet. Add your backend endpoint to enable downloads.",
+        "error"
+      );
+
+      console.log({
+        videoId: currentVideoId,
+        format: format
+      });
+    });
+
+    themeBtn.addEventListener("click", () => {
+
+      document.body.classList.toggle("dark");
+
+      const dark =
+        document.body.classList.contains("dark");
+
+      themeBtn.textContent = dark ? "Light" : "Dark";
+
+      localStorage.setItem(
+        "mytube-theme",
+        dark ? "dark" : "light"
+      );
+    });
+
+    const savedTheme =
+      localStorage.getItem("mytube-theme");
+
+    if (savedTheme === "dark") {
+      document.body.classList.add("dark");
+      themeBtn.textContent = "Light";
+    }
+
+    urlInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        analyzeBtn.click();
+      }
+    });
+  </script>
+
+</body>
+</html>
