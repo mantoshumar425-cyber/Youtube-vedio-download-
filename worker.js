@@ -2,7 +2,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // CORS
+    // CORS preflight
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -10,18 +10,30 @@ export default {
       });
     }
 
-    // Health check
+    // Health
     if (request.method === "GET" && url.pathname === "/api/health") {
       return json({
         service: "MyTube Downloader API",
         status: "online",
-        authorizedDownloadsOnly: true
+        authorizedDownloadsOnly: true,
+        storage: env.VIDEOS ? "connected" : "not_connected"
       });
     }
 
-    // Download endpoint
-    if (request.method === "POST" && url.pathname === "/api/download") {
+    // Create download response
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/download"
+    ) {
       return handleDownload(request, env);
+    }
+
+    // Serve actual R2 file
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/file"
+    ) {
+      return handleFile(request, env);
     }
 
     return json({
@@ -30,6 +42,11 @@ export default {
   }
 };
 
+
+// ==========================================
+// DOWNLOAD API
+// ==========================================
+
 async function handleDownload(request, env) {
   try {
     const body = await request.json();
@@ -37,13 +54,19 @@ async function handleDownload(request, env) {
     const videoId = String(body.videoId || "").trim();
     const format = String(body.format || "720").trim();
 
+    // Validate YouTube-style ID
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
       return json({
-        error: "Invalid YouTube video ID."
+        error: "Invalid video ID."
       }, 400);
     }
 
-    const allowedFormats = ["720", "1080", "480", "audio"];
+    const allowedFormats = [
+      "720",
+      "1080",
+      "480",
+      "audio"
+    ];
 
     if (!allowedFormats.includes(format)) {
       return json({
@@ -51,77 +74,200 @@ async function handleDownload(request, env) {
       }, 400);
     }
 
-    /*
-      IMPORTANT:
-      This Worker does not download or scrape a YouTube video.
-
-      Instead, it expects your own authorized video files
-      to be stored in Cloudflare R2.
-
-      Example R2 object names:
-
-      videos/VIDEO_ID/720.mp4
-      videos/VIDEO_ID/1080.mp4
-      videos/VIDEO_ID/480.mp4
-      videos/VIDEO_ID/audio.mp3
-    */
-
     if (!env.VIDEOS) {
       return json({
-        error: "R2 storage is not connected yet."
+        error: "R2 storage is not connected."
       }, 503);
     }
 
-    const extension = format === "audio" ? "mp3" : "mp4";
-    const objectKey = `videos/${videoId}/${format}.${extension}`;
+    const extension =
+      format === "audio" ? "mp3" : "mp4";
 
+    const objectKey =
+      `videos/${videoId}/${format}.${extension}`;
+
+    // Check file
     const object = await env.VIDEOS.head(objectKey);
 
     if (!object) {
       return json({
-        error:
-          "Authorized video file was not found in your storage.",
+        success: false,
+        error: "Authorized video file was not found.",
         videoId,
         format
       }, 404);
     }
 
-    /*
-      For now we return a clear response.
-      In the next step we'll add a secure download URL
-      using your R2 setup.
-    */
+    // URL for actual file endpoint
+    const downloadUrl =
+      `${new URL(request.url).origin}/api/file` +
+      `?videoId=${encodeURIComponent(videoId)}` +
+      `&format=${encodeURIComponent(format)}`;
 
     return json({
       success: true,
       videoId,
       format,
       file: objectKey,
-      message: "Authorized video found in storage."
+      size: object.size,
+      downloadUrl
     });
 
   } catch (error) {
     return json({
+      success: false,
       error: "Invalid request.",
       details: error.message
     }, 400);
   }
 }
 
+
+// ==========================================
+// ACTUAL R2 FILE DOWNLOAD
+// ==========================================
+
+async function handleFile(request, env) {
+  try {
+    if (!env.VIDEOS) {
+      return new Response(
+        "R2 storage is not connected.",
+        { status: 503 }
+      );
+    }
+
+    const url = new URL(request.url);
+
+    const videoId =
+      String(url.searchParams.get("videoId") || "").trim();
+
+    const format =
+      String(url.searchParams.get("format") || "720").trim();
+
+    // Validate
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+      return new Response(
+        "Invalid video ID.",
+        { status: 400 }
+      );
+    }
+
+    const allowedFormats = [
+      "720",
+      "1080",
+      "480",
+      "audio"
+    ];
+
+    if (!allowedFormats.includes(format)) {
+      return new Response(
+        "Invalid format.",
+        { status: 400 }
+      );
+    }
+
+    const extension =
+      format === "audio" ? "mp3" : "mp4";
+
+    const objectKey =
+      `videos/${videoId}/${format}.${extension}`;
+
+    // Get object from R2
+    const object =
+      await env.VIDEOS.get(objectKey);
+
+    if (!object) {
+      return new Response(
+        "File not found.",
+        { status: 404 }
+      );
+    }
+
+    const headers = new Headers();
+
+    headers.set(
+      "Content-Type",
+      format === "audio"
+        ? "audio/mpeg"
+        : "video/mp4"
+    );
+
+    headers.set(
+      "Content-Length",
+      String(object.size)
+    );
+
+    headers.set(
+      "Content-Disposition",
+      `attachment; filename="${videoId}-${format}.${extension}"`
+    );
+
+    headers.set(
+      "Cache-Control",
+      "private, max-age=0, no-store"
+    );
+
+    // R2 HTTP metadata
+    if (object.httpEtag) {
+      headers.set(
+        "ETag",
+        object.httpEtag
+      );
+    }
+
+    return new Response(
+      object.body,
+      {
+        status: 200,
+        headers
+      }
+    );
+
+  } catch (error) {
+    return new Response(
+      `Download error: ${error.message}`,
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "text/plain"
+        }
+      }
+    );
+  }
+}
+
+
+// ==========================================
+// CORS
+// ==========================================
+
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type"
+    "Access-Control-Allow-Methods":
+      "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type",
+    "Access-Control-Expose-Headers":
+      "Content-Disposition, Content-Length, ETag"
   };
 }
 
+
+// ==========================================
+// JSON RESPONSE
+// ==========================================
+
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      ...corsHeaders()
+  return new Response(
+    JSON.stringify(data, null, 2),
+    {
+      status,
+      headers: {
+        "Content-Type":
+          "application/json; charset=utf-8",
+        ...corsHeaders()
+      }
     }
-  });
+  );
 }
