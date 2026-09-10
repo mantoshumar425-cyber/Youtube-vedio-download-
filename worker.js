@@ -1,8 +1,10 @@
+const ALLOWED_FORMATS = ["720", "1080", "480", "audio"];
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // CORS preflight
+    // CORS
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
@@ -10,230 +12,142 @@ export default {
       });
     }
 
-    // Health
-    if (request.method === "GET" && url.pathname === "/api/health") {
+    // Health check
+    if (
+      request.method === "GET" &&
+      url.pathname === "/api/health"
+    ) {
       return json({
         service: "MyTube Downloader API",
         status: "online",
+        storage: "none",
         authorizedDownloadsOnly: true,
-        storage: env.VIDEOS ? "connected" : "not_connected"
+        message: "Worker is running without R2."
       });
     }
 
-    // Create download response
+    // Analyze
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/analyze"
+    ) {
+      return handleAnalyze(request);
+    }
+
+    // Download request
     if (
       request.method === "POST" &&
       url.pathname === "/api/download"
     ) {
-      return handleDownload(request, env);
-    }
-
-    // Serve actual R2 file
-    if (
-      request.method === "GET" &&
-      url.pathname === "/api/file"
-    ) {
-      return handleFile(request, env);
+      return handleDownload(request);
     }
 
     return json({
-      error: "Endpoint not found"
+      error: "Endpoint not found."
     }, 404);
   }
 };
 
 
 // ==========================================
-// DOWNLOAD API
+// ANALYZE
 // ==========================================
 
-async function handleDownload(request, env) {
+async function handleAnalyze(request) {
   try {
     const body = await request.json();
 
-    const videoId = String(body.videoId || "").trim();
-    const format = String(body.format || "720").trim();
+    const videoId =
+      String(body.videoId || "").trim();
 
-    // Validate YouTube-style ID
-    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+    if (!isValidVideoId(videoId)) {
       return json({
+        success: false,
         error: "Invalid video ID."
       }, 400);
     }
 
-    const allowedFormats = [
-      "720",
-      "1080",
-      "480",
-      "audio"
-    ];
-
-    if (!allowedFormats.includes(format)) {
-      return json({
-        error: "Invalid format."
-      }, 400);
-    }
-
-    if (!env.VIDEOS) {
-      return json({
-        error: "R2 storage is not connected."
-      }, 503);
-    }
-
-    const extension =
-      format === "audio" ? "mp3" : "mp4";
-
-    const objectKey =
-      `videos/${videoId}/${format}.${extension}`;
-
-    // Check file
-    const object = await env.VIDEOS.head(objectKey);
-
-    if (!object) {
-      return json({
-        success: false,
-        error: "Authorized video file was not found.",
-        videoId,
-        format
-      }, 404);
-    }
-
-    // URL for actual file endpoint
-    const downloadUrl =
-      `${new URL(request.url).origin}/api/file` +
-      `?videoId=${encodeURIComponent(videoId)}` +
-      `&format=${encodeURIComponent(format)}`;
-
     return json({
       success: true,
       videoId,
-      format,
-      file: objectKey,
-      size: object.size,
-      downloadUrl
+      thumbnail:
+        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+      title: "Authorized YouTube Video",
+      message: "Video ID recognized successfully."
     });
 
   } catch (error) {
     return json({
       success: false,
-      error: "Invalid request.",
-      details: error.message
+      error: "Invalid request."
     }, 400);
   }
 }
 
 
 // ==========================================
-// ACTUAL R2 FILE DOWNLOAD
+// DOWNLOAD
 // ==========================================
 
-async function handleFile(request, env) {
+async function handleDownload(request) {
   try {
-    if (!env.VIDEOS) {
-      return new Response(
-        "R2 storage is not connected.",
-        { status: 503 }
-      );
-    }
-
-    const url = new URL(request.url);
+    const body = await request.json();
 
     const videoId =
-      String(url.searchParams.get("videoId") || "").trim();
+      String(body.videoId || "").trim();
 
     const format =
-      String(url.searchParams.get("format") || "720").trim();
+      String(body.format || "720").trim();
 
-    // Validate
-    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
-      return new Response(
-        "Invalid video ID.",
-        { status: 400 }
-      );
+    if (!isValidVideoId(videoId)) {
+      return json({
+        success: false,
+        error: "Invalid video ID."
+      }, 400);
     }
 
-    const allowedFormats = [
-      "720",
-      "1080",
-      "480",
-      "audio"
-    ];
-
-    if (!allowedFormats.includes(format)) {
-      return new Response(
-        "Invalid format.",
-        { status: 400 }
-      );
+    if (!ALLOWED_FORMATS.includes(format)) {
+      return json({
+        success: false,
+        error: "Invalid format."
+      }, 400);
     }
 
-    const extension =
-      format === "audio" ? "mp3" : "mp4";
+    /*
+      R2 has intentionally been removed.
 
-    const objectKey =
-      `videos/${videoId}/${format}.${extension}`;
+      This Worker does not scrape, bypass, or retrieve
+      protected YouTube media streams.
 
-    // Get object from R2
-    const object =
-      await env.VIDEOS.get(objectKey);
+      For authorized files, connect a storage provider
+      later and return its authorized file URL here.
+    */
 
-    if (!object) {
-      return new Response(
-        "File not found.",
-        { status: 404 }
-      );
-    }
-
-    const headers = new Headers();
-
-    headers.set(
-      "Content-Type",
-      format === "audio"
-        ? "audio/mpeg"
-        : "video/mp4"
-    );
-
-    headers.set(
-      "Content-Length",
-      String(object.size)
-    );
-
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename="${videoId}-${format}.${extension}"`
-    );
-
-    headers.set(
-      "Cache-Control",
-      "private, max-age=0, no-store"
-    );
-
-    // R2 HTTP metadata
-    if (object.httpEtag) {
-      headers.set(
-        "ETag",
-        object.httpEtag
-      );
-    }
-
-    return new Response(
-      object.body,
-      {
-        status: 200,
-        headers
-      }
-    );
+    return json({
+      success: false,
+      authorized: true,
+      videoId,
+      format,
+      error:
+        "No authorized file storage is connected. " +
+        "R2 is not configured for this Worker."
+    }, 503);
 
   } catch (error) {
-    return new Response(
-      `Download error: ${error.message}`,
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "text/plain"
-        }
-      }
-    );
+    return json({
+      success: false,
+      error: "Invalid request."
+    }, 400);
   }
+}
+
+
+// ==========================================
+// VIDEO ID VALIDATION
+// ==========================================
+
+function isValidVideoId(videoId) {
+  return /^[A-Za-z0-9_-]{11}$/.test(videoId);
 }
 
 
@@ -249,7 +163,7 @@ function corsHeaders() {
     "Access-Control-Allow-Headers":
       "Content-Type",
     "Access-Control-Expose-Headers":
-      "Content-Disposition, Content-Length, ETag"
+      "Content-Type"
   };
 }
 
