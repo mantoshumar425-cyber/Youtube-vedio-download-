@@ -196,6 +196,13 @@
             class="format-select"
           >
 
+            <!--
+              IMPORTANT:
+              script.js converts these values
+              to the format names expected
+              by the Worker.
+            -->
+
             <option value="mp4-720">
               MP4 — 720p
             </option>
@@ -209,7 +216,7 @@
             </option>
 
             <option value="audio">
-              Audio — authorized source only
+              Audio — MP3
             </option>
 
           </select>
@@ -221,7 +228,7 @@
             type="button"
             disabled
           >
-            Continue to Authorized Download
+            Download Authorized File
           </button>
 
         </div>
@@ -301,8 +308,8 @@
           </h3>
 
           <p>
-            Select an available format and continue
-            through your authorized download backend.
+            Select an available format and download
+            your authorized video file.
           </p>
 
         </article>
@@ -325,10 +332,9 @@
       </strong>
 
       This website does not bypass YouTube restrictions
-      or retrieve protected media streams. The download
-      button must be connected to an authorized backend
-      that handles videos you own or have permission to
-      download.
+      or retrieve protected media streams. Downloads are
+      provided only for authorized video files available
+      through your connected backend.
 
     </section>
 
