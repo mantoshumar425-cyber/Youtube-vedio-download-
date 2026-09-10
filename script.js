@@ -22,12 +22,13 @@ let currentVideoId = null;
 // ==========================================
 
 themeBtn?.addEventListener("click", () => {
-  document.body.classList.toggle("light-theme");
+  document.body.classList.toggle("dark");
+
+  const isDark =
+    document.body.classList.contains("dark");
 
   themeBtn.textContent =
-    document.body.classList.contains("light-theme")
-      ? "Dark"
-      : "Light";
+    isDark ? "Light" : "Dark";
 });
 
 
@@ -41,54 +42,66 @@ function showMessage(text, type = "") {
 
   if (type) {
     message.classList.add(type);
+    message.classList.add("show");
   }
 }
 
 
 // ==========================================
-// EXTRACT YOUTUBE VIDEO ID
+// EXTRACT VIDEO ID
 // ==========================================
 
 function extractVideoId(value) {
   try {
     const url = new URL(value.trim());
 
-    // youtube.com/watch?v=
+    const hostname =
+      url.hostname.toLowerCase();
+
+    // youtube.com
     if (
-      url.hostname === "youtube.com" ||
-      url.hostname === "www.youtube.com" ||
-      url.hostname.endsWith(".youtube.com")
+      hostname === "youtube.com" ||
+      hostname === "www.youtube.com" ||
+      hostname.endsWith(".youtube.com")
     ) {
-      const id = url.searchParams.get("v");
+      const watchId =
+        url.searchParams.get("v");
 
-      if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) {
-        return id;
+      if (
+        watchId &&
+        isValidVideoId(watchId)
+      ) {
+        return watchId;
       }
 
-      // /shorts/VIDEO_ID
-      const shorts = url.pathname.match(
-        /\/shorts\/([A-Za-z0-9_-]{11})/
-      );
+      const shortsMatch =
+        url.pathname.match(
+          /\/shorts\/([A-Za-z0-9_-]{11})/
+        );
 
-      if (shorts) {
-        return shorts[1];
+      if (shortsMatch) {
+        return shortsMatch[1];
       }
 
-      // /embed/VIDEO_ID
-      const embed = url.pathname.match(
-        /\/embed\/([A-Za-z0-9_-]{11})/
-      );
+      const embedMatch =
+        url.pathname.match(
+          /\/embed\/([A-Za-z0-9_-]{11})/
+        );
 
-      if (embed) {
-        return embed[1];
+      if (embedMatch) {
+        return embedMatch[1];
       }
     }
 
-    // youtu.be/VIDEO_ID
-    if (url.hostname === "youtu.be") {
-      const id = url.pathname.split("/")[1];
+    // youtu.be
+    if (hostname === "youtu.be") {
+      const id =
+        url.pathname.split("/")[1];
 
-      if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) {
+      if (
+        id &&
+        isValidVideoId(id)
+      ) {
         return id;
       }
     }
@@ -102,219 +115,289 @@ function extractVideoId(value) {
 
 
 // ==========================================
+// VALIDATE VIDEO ID
+// ==========================================
+
+function isValidVideoId(videoId) {
+  return /^[A-Za-z0-9_-]{11}$/.test(videoId);
+}
+
+
+// ==========================================
 // ANALYZE
 // ==========================================
 
-analyzeBtn.addEventListener("click", async () => {
-  const input = urlInput.value.trim();
+analyzeBtn?.addEventListener(
+  "click",
+  async () => {
 
-  if (!input) {
+    const input =
+      urlInput.value.trim();
+
+    if (!input) {
+      showMessage(
+        "Please paste a YouTube video URL.",
+        "error"
+      );
+      return;
+    }
+
+    const videoId =
+      extractVideoId(input);
+
+    if (!videoId) {
+      showMessage(
+        "Please enter a valid YouTube video URL.",
+        "error"
+      );
+      return;
+    }
+
+    currentVideoId = videoId;
+
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = "Checking...";
+
+    downloadBtn.disabled = true;
+
+    result.classList.remove("show");
+    result.classList.remove("visible");
+
     showMessage(
-      "Please paste a YouTube video URL.",
-      "error"
+      "Analyzing video...",
+      "info"
     );
-    return;
+
+    try {
+
+      const response =
+        await fetch(
+          `${API_BASE}/api/analyze`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+              videoId
+            })
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ||
+          "Unable to analyze video."
+        );
+      }
+
+      thumbnail.src =
+        data.thumbnail ||
+        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+      thumbnail.alt =
+        "YouTube video thumbnail";
+
+      videoTitle.textContent =
+        data.title ||
+        "Authorized YouTube Video";
+
+      videoIdElement.textContent =
+        `Video ID: ${videoId}`;
+
+      result.classList.add("show");
+      result.classList.add("visible");
+
+      downloadBtn.disabled = false;
+
+      showMessage(
+        "Video recognized. Select a format.",
+        "success"
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      result.classList.remove("show");
+      result.classList.remove("visible");
+
+      downloadBtn.disabled = true;
+
+      showMessage(
+        error.message ||
+        "Unable to analyze this URL.",
+        "error"
+      );
+
+    } finally {
+
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = "Analyze";
+    }
   }
-
-  const videoId = extractVideoId(input);
-
-  if (!videoId) {
-    showMessage(
-      "Please enter a valid YouTube video URL.",
-      "error"
-    );
-    return;
-  }
-
-  currentVideoId = videoId;
-
-  analyzeBtn.disabled = true;
-  analyzeBtn.textContent = "Checking...";
-
-  downloadBtn.disabled = true;
-  result.classList.remove("visible");
-
-  showMessage(
-    "Checking your authorized video...",
-    "loading"
-  );
-
-  try {
-    /*
-      We only identify the video here.
-      We do not scrape or bypass YouTube media streams.
-    */
-
-    thumbnail.src =
-      `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
-    videoTitle.textContent =
-      "Authorized YouTube Video";
-
-    videoIdElement.textContent =
-      `Video ID: ${videoId}`;
-
-    result.classList.add("visible");
-
-    showMessage(
-      "Video recognized. Select an available format.",
-      "success"
-    );
-
-    downloadBtn.disabled = false;
-
-  } catch (error) {
-    console.error(error);
-
-    showMessage(
-      "Unable to analyze this URL.",
-      "error"
-    );
-
-  } finally {
-    analyzeBtn.disabled = false;
-    analyzeBtn.textContent = "Analyze";
-  }
-});
+);
 
 
 // ==========================================
 // DOWNLOAD
 // ==========================================
 
-downloadBtn.addEventListener("click", async () => {
-  if (!currentVideoId) {
-    showMessage(
-      "Analyze a video first.",
-      "error"
-    );
-    return;
-  }
+downloadBtn?.addEventListener(
+  "click",
+  async () => {
 
-  /*
-    IMPORTANT:
-    Frontend values:
-      mp4-720
-      mp4-1080
-      mp4-480
-
-    Worker expects:
-      720
-      1080
-      480
-      audio
-  */
-
-  const selected = formatSelect.value;
-
-  const formatMap = {
-    "mp4-720": "720",
-    "mp4-1080": "1080",
-    "mp4-480": "480",
-    "audio": "audio"
-  };
-
-  const format = formatMap[selected];
-
-  if (!format) {
-    showMessage(
-      "Invalid format selected.",
-      "error"
-    );
-    return;
-  }
-
-  downloadBtn.disabled = true;
-  downloadBtn.textContent = "Preparing...";
-
-  showMessage(
-    "Checking authorized file...",
-    "loading"
-  );
-
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/download`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json"
-        },
-
-        body: JSON.stringify({
-          videoId: currentVideoId,
-          format: format
-        })
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(
-        data.error ||
-        "Authorized file is not available."
+    if (!currentVideoId) {
+      showMessage(
+        "Analyze a video first.",
+        "error"
       );
+      return;
     }
 
-    if (!data.downloadUrl) {
-      throw new Error(
-        "Download URL was not returned by the server."
+    const selected =
+      formatSelect.value;
+
+    const formatMap = {
+      "mp4-720": "720",
+      "mp4-1080": "1080",
+      "mp4-480": "480",
+      "audio": "audio"
+    };
+
+    const format =
+      formatMap[selected];
+
+    if (!format) {
+      showMessage(
+        "Invalid format selected.",
+        "error"
       );
+      return;
     }
 
-    showMessage(
-      "Download is ready.",
-      "success"
-    );
-
-    /*
-      Start browser download.
-    */
-
-    const link = document.createElement("a");
-
-    link.href = data.downloadUrl;
-    link.download = "";
-
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-  } catch (error) {
-    console.error(error);
-
-    showMessage(
-      error.message ||
-      "Download failed.",
-      "error"
-    );
-
-  } finally {
-    downloadBtn.disabled = false;
+    downloadBtn.disabled = true;
     downloadBtn.textContent =
-      "Continue to Authorized Download";
+      "Checking...";
+
+    showMessage(
+      "Checking authorized file...",
+      "info"
+    );
+
+    try {
+
+      const response =
+        await fetch(
+          `${API_BASE}/api/download`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+              videoId:
+                currentVideoId,
+              format
+            })
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.success
+      ) {
+        throw new Error(
+          data.error ||
+          "Authorized file is not available."
+        );
+      }
+
+      if (data.downloadUrl) {
+
+        const link =
+          document.createElement("a");
+
+        link.href =
+          data.downloadUrl;
+
+        link.download = "";
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        showMessage(
+          "Download started.",
+          "success"
+        );
+
+      } else {
+
+        showMessage(
+          "Authorized file is ready, but no download URL was returned.",
+          "info"
+        );
+      }
+
+    } catch (error) {
+
+      console.error(error);
+
+      showMessage(
+        error.message ||
+        "Download is not available.",
+        "error"
+      );
+
+    } finally {
+
+      downloadBtn.disabled = false;
+
+      downloadBtn.textContent =
+        "Download Authorized File";
+    }
   }
-});
+);
 
 
 // ==========================================
 // ENTER KEY
 // ==========================================
 
-urlInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    analyzeBtn.click();
+urlInput?.addEventListener(
+  "keydown",
+  (event) => {
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      analyzeBtn.click();
+    }
+
   }
-});
+);
 
 
 // ==========================================
 // INITIAL STATE
 // ==========================================
 
+result.classList.remove("show");
 result.classList.remove("visible");
 
 showMessage(
