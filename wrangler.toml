@@ -1,0 +1,7 @@
+name = "youtube-vedio-download"
+main = "worker.js"
+compatibility_date = "2026-08-26"
+
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "YOUR_R2_BUCKET_NAME"
